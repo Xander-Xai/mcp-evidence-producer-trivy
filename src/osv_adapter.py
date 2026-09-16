@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
+
+from .scanner_execution import execution_is_complete
 
 SCOPE = "dependency-vulnerabilities"
 PROFILE = "registry-pr-1404@20747d3253ba8638161dd95f1cec70df02993c22"
@@ -13,17 +16,17 @@ def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def map_report(
+def validate_report(
     raw: dict[str, Any],
     *,
     artifact_ref: str,
-    artifact_sha256: str,
     scanner_version: str,
     scanner_exit_code: int,
-    scanned_at: str | None = None,
-    evidence_digest: str | None = None,
-) -> dict[str, Any]:
-    """Map one OSV-Scanner v2 JSON lockfile result without changing scanner semantics."""
+) -> int:
+    """Validate an OSV-Scanner v2 result and return its finding count."""
+
+    if not isinstance(raw, dict):
+        raise ValueError("malformed_osv_report")
     results = raw.get("results")
     if not isinstance(results, list):
         raise ValueError("malformed_osv_report")
@@ -89,6 +92,36 @@ def map_report(
         raise ValueError("osv_exit_verdict_mismatch")
     if scanner_exit_code == 1 and finding_count == 0:
         raise ValueError("osv_exit_verdict_mismatch")
+    return finding_count
+
+
+def map_report(
+    raw: dict[str, Any],
+    *,
+    artifact_ref: str,
+    artifact_sha256: str,
+    scanner_version: str,
+    scanner_exit_code: int | None = None,
+    scanner_execution: Mapping[str, Any] | None = None,
+    scanned_at: str | None = None,
+    evidence_digest: str | None = None,
+) -> dict[str, Any]:
+    """Map one OSV result only after execution completeness is proven."""
+
+    if scanner_exit_code is None and isinstance(scanner_execution, Mapping):
+        candidate = scanner_execution.get("exit_code")
+        if isinstance(candidate, int):
+            scanner_exit_code = candidate
+    if not isinstance(scanner_exit_code, int):
+        raise ValueError("unexpected_osv_exit_code")
+    finding_count = validate_report(
+        raw,
+        artifact_ref=artifact_ref,
+        scanner_version=scanner_version,
+        scanner_exit_code=scanner_exit_code,
+    )
+    if not execution_is_complete(scanner_execution, expected_exit_codes=(0, 1)):
+        raise ValueError("scanner_execution_incomplete")
 
     receipt: dict[str, Any] = {
         "scanner": "osv-scanner",
@@ -113,8 +146,9 @@ def inconclusive_receipt(
     scanner_version: str,
     reason: str = "evidence_unavailable",
     scanned_at: str | None = None,
+    evidence_digest: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    receipt = {
         "scanner": "osv-scanner",
         "scanner_version": scanner_version,
         "scanned_artifact_ref": artifact_ref,
@@ -126,3 +160,6 @@ def inconclusive_receipt(
         "attestation": "publisher-asserted",
         "policy_profile": PROFILE,
     }
+    if evidence_digest:
+        receipt["evidence_digest"] = evidence_digest
+    return receipt

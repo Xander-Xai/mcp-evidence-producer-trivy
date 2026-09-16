@@ -43,6 +43,7 @@ jobs:
           test "$code" = "0" -o "$code" = "1" -o "$code" = "2"
           node -e "const fs=require('fs'); const g=JSON.parse(fs.readFileSync('gate.json')); const r=JSON.parse(fs.readFileSync('out/receipt.json')); if(g.receiptVerdict!==r.verdict || (r.verdict==='findings' && g.decision!=='fail') || (r.verdict==='clean' && g.decision==='fail')) process.exit(1);"
           node -e "const fs=require('fs'),c=require('crypto'); const a=fs.readFileSync('artifacts/requirements.txt'); const e=fs.readFileSync('out/evidence.json'); const r=JSON.parse(fs.readFileSync('out/receipt.json')); if(r.scanned_artifact_digest!=='sha256:'+c.createHash('sha256').update(a).digest('hex')) process.exit(1); if(r.evidence_digest!=='sha256:'+c.createHash('sha256').update(e).digest('hex')) process.exit(1); if(r.scanner_version!=='0.74.0') process.exit(1);"
+          node -e "const fs=require('fs'); const e=JSON.parse(fs.readFileSync('out/evidence.json')); const x=e.scanner_execution; if(x?.completeness_status!=='complete' || x.required_work_completed!==true || x.result_semantics_consistent!==true || x.invocation_started!==true || x.process_completed!==true || x.output_present!==true || x.output_parseable!==true) process.exit(1);"
 
   real-osv-consumer:
     runs-on: ubuntu-latest
@@ -111,6 +112,8 @@ jobs:
           if (gate.receiptVerdict !== receipt.verdict) process.exit(1);
           if (receipt.verdict === 'findings' && gate.decision !== 'fail') process.exit(1);
           if (receipt.verdict === 'clean' && !['pass', 'warn'].includes(gate.decision)) process.exit(1);
+          const execution = evidence.scanner_execution;
+          if (execution?.completeness_status !== 'complete' || execution.required_work_completed !== true || execution.result_semantics_consistent !== true || execution.invocation_started !== true || execution.process_completed !== true || execution.output_present !== true || execution.output_parseable !== true) process.exit(1);
           NODE
 
       - name: Upload OSV runtime evidence

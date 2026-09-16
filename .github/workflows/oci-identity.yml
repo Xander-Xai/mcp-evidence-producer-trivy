@@ -120,6 +120,14 @@ jobs:
           assert evidence['raw_report']['sha256'] == digest('out-oci/trivy.raw.json').removeprefix('sha256:')
           assert evidence['invocation']['target_exact_ref'] == selected['exact_ref']
           assert evidence['invocation']['argv'][-1] == selected['exact_ref']
+          execution = evidence['scanner_execution']
+          assert execution['completeness_status'] == 'complete'
+          assert execution['required_work_completed'] is True
+          assert execution['result_semantics_consistent'] is True
+          assert execution['invocation_started'] is True
+          assert execution['process_completed'] is True
+          assert execution['output_present'] is True
+          assert execution['output_parseable'] is True
 
           artifact_binding = next(check for check in gate['checks'] if check['id'] == 'artifact_binding')
           evidence_binding = next(check for check in gate['checks'] if check['id'] == 'evidence_binding')
