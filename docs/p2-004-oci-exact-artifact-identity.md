@@ -82,7 +82,9 @@ out-oci/
 `oci-identity.json` is a project-defined audit record, not an OCI or MCP standard
 schema. `evidence.json` binds the identity record, root index, selected manifest,
 raw scanner report, scanner binary identity, scanner database state and exact
-invocation. `receipt.json` keeps scanner verdict semantics independent from
+invocation. It also carries the project-defined `scanner_execution` record;
+zero image findings are not enough for a clean candidate unless that record is
+`complete`. `receipt.json` keeps scanner verdict semantics independent from
 admission policy.
 
 ## Consumer acceptance

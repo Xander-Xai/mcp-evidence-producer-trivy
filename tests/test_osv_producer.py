@@ -57,9 +57,11 @@ def test_valid_findings_are_successful_evidence_production(monkeypatch, tmp_path
     assert osv_producer.run(str(binary), artifact, out) == 0
     receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
     evidence = (out / "evidence.json").read_bytes()
+    evidence_value = json.loads(evidence)
     assert receipt["verdict"] == "findings"
     assert receipt["scanner_version"] == "2.5.1"
     assert receipt["evidence_digest"] == f"sha256:{hashlib.sha256(evidence).hexdigest()}"
+    assert evidence_value["scanner_execution"]["completeness_status"] == "complete"
 
 
 def test_valid_clean_scan_is_successful_evidence_production(monkeypatch, tmp_path: Path) -> None:
@@ -73,6 +75,8 @@ def test_valid_clean_scan_is_successful_evidence_production(monkeypatch, tmp_pat
     assert osv_producer.run(str(binary), artifact, out) == 0
     receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
     assert receipt["verdict"] == "clean"
+    evidence = json.loads((out / "evidence.json").read_text(encoding="utf-8"))
+    assert evidence["scanner_execution"]["completeness_status"] == "complete"
 
 
 def test_no_packages_exit_128_is_inconclusive(monkeypatch, tmp_path: Path) -> None:
@@ -87,7 +91,8 @@ def test_no_packages_exit_128_is_inconclusive(monkeypatch, tmp_path: Path) -> No
     receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
     assert receipt["verdict"] == "inconclusive"
     assert receipt["inconclusive_reason"] == "evidence_unavailable"
-    assert not (out / "evidence.json").exists()
+    evidence = json.loads((out / "evidence.json").read_text(encoding="utf-8"))
+    assert evidence["scanner_execution"]["completeness_status"] != "complete"
 
 
 def test_malformed_json_is_inconclusive(monkeypatch, tmp_path: Path) -> None:
@@ -101,6 +106,42 @@ def test_malformed_json_is_inconclusive(monkeypatch, tmp_path: Path) -> None:
     assert osv_producer.run(str(binary), artifact, out) == 1
     receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
     assert receipt["verdict"] == "inconclusive"
+    evidence = json.loads((out / "evidence.json").read_text(encoding="utf-8"))
+    assert evidence["scanner_execution"]["completeness_reason"] == "scanner_output_unparseable"
+
+
+def test_exit_and_raw_result_contradiction_is_inconclusive(monkeypatch, tmp_path: Path) -> None:
+    binary, artifact = _setup_verified_binary(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        osv_producer.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=_report(artifact, False), stderr=""),
+    )
+    out = tmp_path / "out"
+    assert osv_producer.run(str(binary), artifact, out) == 1
+    receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
+    evidence = json.loads((out / "evidence.json").read_text(encoding="utf-8"))
+    assert receipt["verdict"] == "inconclusive"
+    assert evidence["scanner_execution"]["completeness_status"] == "incomplete"
+    assert evidence["scanner_execution"]["completeness_reason"] == "osv_exit_verdict_mismatch"
+
+
+def test_source_path_mismatch_is_classified_as_source_binding(monkeypatch, tmp_path: Path) -> None:
+    binary, artifact = _setup_verified_binary(monkeypatch, tmp_path)
+    wrong_source = tmp_path / "other-requirements.txt"
+    wrong_source.write_text("requests==2.31.0\n", encoding="utf-8")
+    monkeypatch.setattr(
+        osv_producer.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=_report(wrong_source, False), stderr=""),
+    )
+    out = tmp_path / "out"
+    assert osv_producer.run(str(binary), artifact, out) == 1
+    receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
+    evidence = json.loads((out / "evidence.json").read_text(encoding="utf-8"))
+    assert receipt["verdict"] == "inconclusive"
+    assert evidence["scanner_execution"]["completeness_reason"] == "artifact_ref_mismatch"
+    assert evidence["scanner_execution"]["failed_components"] == ["source_binding"]
 
 
 def test_valid_exit_with_unmappable_report_is_inconclusive(monkeypatch, tmp_path: Path) -> None:
@@ -135,7 +176,8 @@ def test_verified_binary_with_wrong_version_is_inconclusive(monkeypatch, tmp_pat
     receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
     assert receipt["verdict"] == "inconclusive"
     assert receipt["scanner_version"] == "2.5.0"
-    assert not (out / "evidence.json").exists()
+    evidence = json.loads((out / "evidence.json").read_text(encoding="utf-8"))
+    assert evidence["scanner_execution"]["invocation_started"] is False
 
 
 def test_unverified_binary_is_inconclusive(tmp_path: Path) -> None:

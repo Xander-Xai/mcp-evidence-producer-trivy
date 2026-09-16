@@ -1,0 +1,48 @@
+{
+  "raw_report": {
+    "Trivy": {
+      "Version": "0.74.0"
+    },
+    "ArtifactName": "fixture-artifact.txt",
+    "Results": [
+      {
+        "Target": "fixture-artifact.txt",
+        "Class": "lang-pkgs",
+        "Type": "python",
+        "Vulnerabilities": []
+      }
+    ]
+  },
+  "scanner_execution": {
+    "schema_version": "project-defined-scanner-execution-v1",
+    "scanner_contract": "trivy-fs-json-v1",
+    "invocation_started": true,
+    "process_completed": false,
+    "exit_code": null,
+    "exit_state_valid": false,
+    "output_present": true,
+    "output_parseable": true,
+    "required_components": [
+      "scanner_process",
+      "scanner_output",
+      "result_sections",
+      "artifact_binding",
+      "result_semantics"
+    ],
+    "completed_components": [
+      "scanner_output",
+      "result_sections",
+      "artifact_binding",
+      "result_semantics"
+    ],
+    "failed_components": ["scanner_process"],
+    "completeness_status": "failed",
+    "completeness_reason": "scanner_process_failed",
+    "required_work_completed": false,
+    "result_semantics_consistent": true
+  },
+  "expected": {
+    "verdict": "inconclusive",
+    "completeness_status": "failed"
+  }
+}

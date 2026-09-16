@@ -33,7 +33,9 @@ scan result codes used here:
 
 Only result codes `0` and `1` can produce clean/findings evidence. No-package,
 malformed-output, binary/version mismatch, or other runtime errors fail closed as
-inconclusive.
+inconclusive. The producer additionally records explicit `scanner_execution`
+completeness evidence; a valid-looking empty result cannot override an
+incomplete process/output/source/consistency check.
 
 ## Artifact and report binding
 

@@ -13,6 +13,37 @@ They do not claim server safety, provenance/name custody, cryptographic
 attestation, signatures, PKI, scanner reputation, or Registry adoption.
 Admission remains the downstream gate's job.
 
+## Scanner execution completeness
+
+Zero findings does not prove that the scanner completed. A scanner can crash,
+write no output, or leave a structurally incomplete report that looks empty.
+Every producer therefore records a project-defined `scanner_execution` object
+inside `evidence.json`. It records the invocation, process and exit state,
+required output, parseability, required/completed/failed components, and a
+deterministic `completeness_status` of `complete`, `incomplete`, or `failed`.
+The record also states the producer's bounded reason for that status; it is not
+a scanner attestation or an MCP Registry field.
+
+For Trivy filesystem and OCI reports, a parseable `Results: []` is treated as
+missing result sections: it does not prove that the requested artifact or
+manifest was evaluated. A result section with a valid target and zero
+vulnerabilities can still support `clean` when execution is complete.
+
+Producer clean requires both:
+
+1. scanner-result semantics (the parsed report consistently says there are no
+   findings); and
+2. scanner-execution completeness (all required scanner work, output, binding,
+   and consistency checks completed).
+
+If any required condition is missing, the producer emits an `inconclusive`
+receipt (or the existing producer runtime failure) and never `clean`. Findings
+remain findings when execution is complete. This additive evidence extension
+keeps the v1 receipt shape and does not change the pinned Registry profile.
+Existing v1 evidence manifests without `scanner_execution` are legacy records;
+they must be regenerated before a producer can make a clean claim rather than
+being silently reinterpreted as complete.
+
 ## Trivy — exact local file
 
 ```powershell
@@ -86,7 +117,8 @@ The exact invocation uses `scan --format json -L <artifact>`. Scanner exit codes
 no-package/error states are fail-closed as inconclusive. The adapter requires
 every reported source path to bind to the requested artifact, at least one
 primary `lockfile` source, and consistency between scanner exit code and raw
-vulnerability data.
+vulnerability data. A source-path mismatch is recorded against the existing
+`source_binding` execution component.
 
 OSV vulnerability data is queried remotely. The evidence manifest therefore
 records `scanner_database.snapshot = "unavailable"` instead of inventing an
