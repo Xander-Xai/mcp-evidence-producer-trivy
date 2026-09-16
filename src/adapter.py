@@ -34,6 +34,11 @@ def validate_report(
     reports = raw.get("Results")
     if not isinstance(reports, list):
         raise ValueError("malformed_trivy_report")
+    if not reports:
+        # A parseable empty result array does not prove that Trivy evaluated the
+        # requested artifact.  Keep the result-section component incomplete so
+        # the producer cannot turn an absent scan target into a clean verdict.
+        raise ValueError("trivy_result_sections_missing")
     trivy = raw.get("Trivy")
     if not isinstance(trivy, dict) or not isinstance(trivy.get("Version"), str):
         raise ValueError("malformed_trivy_report")

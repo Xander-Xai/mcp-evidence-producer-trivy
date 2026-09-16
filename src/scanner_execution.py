@@ -133,8 +133,17 @@ def execution_is_complete(
     return True
 
 
-def component_for_error(error: str) -> str:
-    """Map scanner-specific validation errors to a stable evidence component."""
+def component_for_error(error: str, *, scanner: str | None = None) -> str:
+    """Map scanner-specific validation errors to a stable evidence component.
+
+    ``artifact_ref_mismatch`` is emitted by both Trivy and OSV validation, but
+    the bound object differs: Trivy binds a report to an artifact while OSV
+    binds each result source to the requested lockfile.  Keep the existing
+    error reason and select the canonical component with scanner context.
+    """
+
+    if scanner == "osv" and error == "artifact_ref_mismatch":
+        return "source_binding"
 
     if "artifact" in error or "oci_" in error:
         return "artifact_binding"

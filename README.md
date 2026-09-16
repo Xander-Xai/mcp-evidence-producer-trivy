@@ -24,6 +24,11 @@ deterministic `completeness_status` of `complete`, `incomplete`, or `failed`.
 The record also states the producer's bounded reason for that status; it is not
 a scanner attestation or an MCP Registry field.
 
+For Trivy filesystem and OCI reports, a parseable `Results: []` is treated as
+missing result sections: it does not prove that the requested artifact or
+manifest was evaluated. A result section with a valid target and zero
+vulnerabilities can still support `clean` when execution is complete.
+
 Producer clean requires both:
 
 1. scanner-result semantics (the parsed report consistently says there are no
@@ -112,7 +117,8 @@ The exact invocation uses `scan --format json -L <artifact>`. Scanner exit codes
 no-package/error states are fail-closed as inconclusive. The adapter requires
 every reported source path to bind to the requested artifact, at least one
 primary `lockfile` source, and consistency between scanner exit code and raw
-vulnerability data.
+vulnerability data. A source-path mismatch is recorded against the existing
+`source_binding` execution component.
 
 OSV vulnerability data is queried remotely. The evidence manifest therefore
 records `scanner_database.snapshot = "unavailable"` instead of inventing an

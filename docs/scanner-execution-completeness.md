@@ -68,12 +68,16 @@ cannot force `complete` by writing a status string.
 - Trivy filesystem and OCI image producers invoke pinned Trivy with
   `--exit-code 0`. A normal process exit, non-empty parseable JSON, required
   Trivy sections, exact artifact binding, and the adapter's semantic checks are
-  all required. A non-zero/negative exit, missing/empty/truncated JSON, missing
-  sections, or identity mismatch is not complete.
+  all required. `Results: []` is explicitly a missing result section: a
+  parseable empty array cannot prove that the requested artifact or image
+  manifest was evaluated. A non-zero/negative exit, missing/empty/truncated
+  JSON, missing sections, or identity mismatch is not complete; a valid target
+  section with zero vulnerabilities remains eligible for `clean`.
 - OSV-Scanner keeps its existing v2.5.1 contract: only exit `0` (packages with
   no findings) and exit `1` (packages with findings) are valid; a primary
   lockfile source, package data, source-path binding, and exit/data consistency
-  remain required. No-package/error states remain fail-closed.
+  remain required. Source-path mismatches are classified as the existing
+  `source_binding` component. No-package/error states remain fail-closed.
 
 The producer records only the boundary it can verify. It does not invent
 component-level completion that a scanner does not expose.

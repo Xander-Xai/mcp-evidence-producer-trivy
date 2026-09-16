@@ -43,7 +43,7 @@ def _setup(monkeypatch, tmp_path: Path) -> tuple[Path, str, str, bytes]:
     return binary, image, digest, manifest
 
 
-def _stub_scan(monkeypatch, exact_ref: str, *, output: bool) -> None:
+def _stub_scan(monkeypatch, exact_ref: str, *, output: bool, empty_results: bool = False) -> None:
     def fake_run(argv, **_kwargs):
         path = Path(argv[argv.index("--output") + 1])
         if output:
@@ -52,7 +52,9 @@ def _stub_scan(monkeypatch, exact_ref: str, *, output: bool) -> None:
                     {
                         "Trivy": {"Version": "0.74.0"},
                         "ArtifactName": exact_ref,
-                        "Results": [{"Target": "image", "Class": "os-pkgs", "Type": "debian", "Vulnerabilities": []}],
+                        "Results": []
+                        if empty_results
+                        else [{"Target": "image", "Class": "os-pkgs", "Type": "debian", "Vulnerabilities": []}],
                     }
                 ),
                 encoding="utf-8",
@@ -85,3 +87,15 @@ def test_oci_missing_output_is_inconclusive(monkeypatch, tmp_path: Path) -> None
     evidence = json.loads((out / "evidence.json").read_text(encoding="utf-8"))
     assert receipt["verdict"] == "inconclusive"
     assert evidence["scanner_execution"]["completeness_reason"] == "scanner_output_missing"
+
+
+def test_oci_empty_results_are_inconclusive(monkeypatch, tmp_path: Path) -> None:
+    binary, image, _digest, _manifest = _setup(monkeypatch, tmp_path)
+    _stub_scan(monkeypatch, image, output=True, empty_results=True)
+    out = tmp_path / "out"
+    assert oci_producer.run(binary.as_posix(), image, out, os_name="linux", architecture="amd64") == 1
+    receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
+    evidence = json.loads((out / "evidence.json").read_text(encoding="utf-8"))
+    assert receipt["verdict"] == "inconclusive"
+    assert evidence["scanner_execution"]["completeness_reason"] == "trivy_result_sections_missing"
+    assert evidence["scanner_execution"]["failed_components"] == ["result_sections"]

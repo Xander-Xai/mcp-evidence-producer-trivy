@@ -99,3 +99,16 @@ def test_scanner_version_mismatch_is_rejected():
             manifest_digest=DIGEST,
             scanner_version="0.74.0",
         )
+
+
+def test_empty_image_results_are_rejected_as_inconclusive():
+    raw = raw_report()
+    raw["Results"] = []
+    with pytest.raises(ValueError, match="trivy_result_sections_missing"):
+        map_image_report(
+            raw,
+            exact_ref=EXACT_REF,
+            manifest_digest=DIGEST,
+            scanner_version="0.74.0",
+            scanner_execution=complete_execution(),
+        )

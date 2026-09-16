@@ -41,6 +41,10 @@ def validate_image_report(
     results = raw.get("Results")
     if not isinstance(results, list) or any(not isinstance(item, dict) for item in results):
         raise ValueError("malformed_trivy_image_report")
+    if not results:
+        # A parseable empty result array does not prove that the requested image
+        # manifest was evaluated, so it must remain inconclusive.
+        raise ValueError("trivy_result_sections_missing")
     trivy = raw.get("Trivy")
     if not isinstance(trivy, dict) or trivy.get("Version") != scanner_version:
         raise ValueError("trivy_version_mismatch")

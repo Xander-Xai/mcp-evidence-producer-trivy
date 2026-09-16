@@ -56,6 +56,11 @@ def _stub_scan(monkeypatch, artifact: Path, *, mode: str, exit_code: int = 0) ->
             output_path.write_text('{"Results":', encoding="utf-8")
         elif mode == "missing-section":
             output_path.write_text(json.dumps(_report(artifact, include_results=False)), encoding="utf-8")
+        elif mode == "empty-results":
+            output_path.write_text(
+                json.dumps({**_report(artifact), "Results": []}),
+                encoding="utf-8",
+            )
         elif mode == "clean":
             output_path.write_text(json.dumps(_report(artifact)), encoding="utf-8")
         elif mode == "findings":
@@ -77,7 +82,7 @@ def _run_case(monkeypatch, tmp_path: Path, *, mode: str, exit_code: int = 0) -> 
     return code, receipt, evidence
 
 
-@pytest.mark.parametrize("mode", ["crash", "missing", "empty", "malformed", "missing-section"])
+@pytest.mark.parametrize("mode", ["crash", "missing", "empty", "malformed", "missing-section", "empty-results"])
 def test_trivy_incomplete_execution_is_never_clean(monkeypatch, tmp_path: Path, mode: str) -> None:
     code, receipt, evidence = _run_case(monkeypatch, tmp_path, mode=mode)
     execution = evidence["scanner_execution"]
@@ -117,6 +122,22 @@ def test_stale_valid_output_cannot_survive_a_scanner_crash(monkeypatch, tmp_path
     receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
     assert receipt["verdict"] == "inconclusive"
     assert evidence["raw_report"]["exists"] is False
+
+
+def test_stale_valid_output_cannot_survive_empty_results(monkeypatch, tmp_path: Path) -> None:
+    binary, artifact = _setup_verified_trivy(monkeypatch, tmp_path)
+    out = tmp_path / "out"
+    _stub_scan(monkeypatch, artifact, mode="clean")
+    assert producer.run(str(binary), artifact, out) == 0
+    _stub_scan(monkeypatch, artifact, mode="empty-results")
+    assert producer.run(str(binary), artifact, out) == 1
+    evidence = json.loads((out / "evidence.json").read_text(encoding="utf-8"))
+    receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["verdict"] == "inconclusive"
+    assert evidence["scanner_execution"]["completeness_reason"] == "trivy_result_sections_missing"
+    assert evidence["scanner_execution"]["failed_components"] == ["result_sections"]
+    assert evidence["raw_report"]["exists"] is True
+    assert json.loads((out / "trivy.raw.json").read_text(encoding="utf-8"))["Results"] == []
 
 
 def test_false_clean_regression_fixture_requires_complete_execution() -> None:

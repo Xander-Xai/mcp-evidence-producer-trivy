@@ -126,6 +126,24 @@ def test_exit_and_raw_result_contradiction_is_inconclusive(monkeypatch, tmp_path
     assert evidence["scanner_execution"]["completeness_reason"] == "osv_exit_verdict_mismatch"
 
 
+def test_source_path_mismatch_is_classified_as_source_binding(monkeypatch, tmp_path: Path) -> None:
+    binary, artifact = _setup_verified_binary(monkeypatch, tmp_path)
+    wrong_source = tmp_path / "other-requirements.txt"
+    wrong_source.write_text("requests==2.31.0\n", encoding="utf-8")
+    monkeypatch.setattr(
+        osv_producer.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=_report(wrong_source, False), stderr=""),
+    )
+    out = tmp_path / "out"
+    assert osv_producer.run(str(binary), artifact, out) == 1
+    receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
+    evidence = json.loads((out / "evidence.json").read_text(encoding="utf-8"))
+    assert receipt["verdict"] == "inconclusive"
+    assert evidence["scanner_execution"]["completeness_reason"] == "artifact_ref_mismatch"
+    assert evidence["scanner_execution"]["failed_components"] == ["source_binding"]
+
+
 def test_valid_exit_with_unmappable_report_is_inconclusive(monkeypatch, tmp_path: Path) -> None:
     binary, artifact = _setup_verified_binary(monkeypatch, tmp_path)
     malformed_but_json = json.dumps(

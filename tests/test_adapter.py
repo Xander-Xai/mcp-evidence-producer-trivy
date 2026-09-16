@@ -1,5 +1,8 @@
 import json
 from pathlib import Path
+
+import pytest
+
 from src.adapter import map_report
 from src.scanner_execution import make_execution_evidence
 
@@ -36,3 +39,20 @@ def test_malformed_report_is_rejected():
         assert str(exc) == "malformed_trivy_report"
     else:
         raise AssertionError("malformed report must not become clean")
+
+
+def test_empty_results_are_rejected_as_inconclusive():
+    raw = {
+        "Trivy": {"Version": "0.74.0"},
+        "ArtifactName": "artifact.txt",
+        "Results": [],
+    }
+    with pytest.raises(ValueError, match="trivy_result_sections_missing"):
+        map_report(
+            raw,
+            artifact_ref="artifact.txt",
+            artifact_sha256="a" * 64,
+            scanner_version="0.74.0",
+            scanner_exit_code=0,
+            scanner_execution=complete_execution(),
+        )
