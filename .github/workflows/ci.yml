@@ -42,7 +42,7 @@ jobs:
           set -e
           test "$code" = "0" -o "$code" = "1" -o "$code" = "2"
           node -e "const fs=require('fs'); const g=JSON.parse(fs.readFileSync('gate.json')); const r=JSON.parse(fs.readFileSync('out/receipt.json')); if(g.receiptVerdict!==r.verdict || (r.verdict==='findings' && g.decision!=='fail') || (r.verdict==='clean' && g.decision==='fail')) process.exit(1);"
-          node -e "const fs=require('fs'),c=require('crypto'); const a=fs.readFileSync('artifacts/requirements.txt'); const e=fs.readFileSync('out/evidence.json'); const r=JSON.parse(fs.readFileSync('out/receipt.json')); const x=JSON.parse(e); if(r.scanned_artifact_digest!=='sha256:'+x.scan_input.sha256) process.exit(1); if(x.artifact.sha256!==x.scan_input.sha256 || x.artifact.size!==x.scan_input.size) process.exit(1); if(r.evidence_digest!=='sha256:'+c.createHash('sha256').update(e).digest('hex')) process.exit(1); if(r.scanner_version!=='0.74.0') process.exit(1);"
+          node -e "const fs=require('fs'),c=require('crypto'); const e=JSON.parse(fs.readFileSync('out/evidence.json')); const r=JSON.parse(fs.readFileSync('out/receipt.json')); if(e.artifact.ref!=='artifacts/requirements.txt' || e.scan_input.source_ref!=='artifacts/requirements.txt') process.exit(1); if(e.invocation.argv.at(-1)==='artifacts/requirements.txt' || !e.invocation.argv.at(-1).includes('mcp-evidence-snapshot-')) process.exit(1); if(r.scanned_artifact_digest!=='sha256:'+e.scan_input.sha256) process.exit(1); if(e.artifact.sha256!==e.scan_input.sha256 || e.artifact.size!==e.scan_input.size) process.exit(1); if(r.evidence_digest!=='sha256:'+c.createHash('sha256').update(fs.readFileSync('out/evidence.json')).digest('hex')) process.exit(1); if(r.scanner_version!=='0.74.0') process.exit(1);"
           node -e "const fs=require('fs'); const e=JSON.parse(fs.readFileSync('out/evidence.json')); const x=e.scanner_execution; if(x?.completeness_status!=='complete' || x.required_work_completed!==true || x.result_semantics_consistent!==true || x.invocation_started!==true || x.process_completed!==true || x.output_present!==true || x.output_parseable!==true) process.exit(1);"
 
   real-osv-consumer:
@@ -104,6 +104,8 @@ jobs:
           if (!['clean', 'findings'].includes(receipt.verdict)) process.exit(1);
           if (receipt.scanned_artifact_digest !== 'sha256:' + evidence.scan_input.sha256) process.exit(1);
           if (evidence.artifact.sha256 !== evidence.scan_input.sha256 || evidence.artifact.size !== evidence.scan_input.size) process.exit(1);
+          if (evidence.artifact.ref !== 'artifacts/requirements.txt' || evidence.scan_input.source_ref !== 'artifacts/requirements.txt') process.exit(1);
+          if (evidence.invocation.argv.at(-1) === 'artifacts/requirements.txt' || !evidence.invocation.argv.at(-1).includes('mcp-evidence-snapshot-')) process.exit(1);
           if (receipt.evidence_digest !== 'sha256:' + sha(evidenceBytes)) process.exit(1);
           if (evidence.scanner?.binary_sha256 !== 'f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be') process.exit(1);
           if (![0, 1].includes(evidence.invocation?.exit_code)) process.exit(1);
