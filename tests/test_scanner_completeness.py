@@ -45,6 +45,7 @@ def _report(artifact: Path, *, findings: int = 0, include_results: bool = True) 
 
 def _stub_scan(monkeypatch, artifact: Path, *, mode: str, exit_code: int = 0) -> None:
     def fake_run(argv, **_kwargs):
+        scan_target = Path(argv[-1])
         output_path = Path(argv[argv.index("--output") + 1])
         if mode == "crash":
             raise RuntimeError("fake scanner crashed")
@@ -55,16 +56,16 @@ def _stub_scan(monkeypatch, artifact: Path, *, mode: str, exit_code: int = 0) ->
         elif mode == "malformed":
             output_path.write_text('{"Results":', encoding="utf-8")
         elif mode == "missing-section":
-            output_path.write_text(json.dumps(_report(artifact, include_results=False)), encoding="utf-8")
+            output_path.write_text(json.dumps(_report(scan_target, include_results=False)), encoding="utf-8")
         elif mode == "empty-results":
             output_path.write_text(
-                json.dumps({**_report(artifact), "Results": []}),
+                json.dumps({**_report(scan_target), "Results": []}),
                 encoding="utf-8",
             )
         elif mode == "clean":
-            output_path.write_text(json.dumps(_report(artifact)), encoding="utf-8")
+            output_path.write_text(json.dumps(_report(scan_target)), encoding="utf-8")
         elif mode == "findings":
-            output_path.write_text(json.dumps(_report(artifact, findings=1)), encoding="utf-8")
+            output_path.write_text(json.dumps(_report(scan_target, findings=1)), encoding="utf-8")
         else:  # pragma: no cover - keeps fixture failures explicit
             raise AssertionError(mode)
         return SimpleNamespace(returncode=exit_code, stdout="", stderr="")

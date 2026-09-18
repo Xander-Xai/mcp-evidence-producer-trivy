@@ -99,6 +99,7 @@ def map_report(
     raw: dict[str, Any],
     *,
     artifact_ref: str,
+    scan_target_ref: str | None = None,
     artifact_sha256: str,
     scanner_version: str,
     scanner_exit_code: int | None = None,
@@ -116,7 +117,7 @@ def map_report(
         raise ValueError("unexpected_osv_exit_code")
     finding_count = validate_report(
         raw,
-        artifact_ref=artifact_ref,
+        artifact_ref=scan_target_ref or artifact_ref,
         scanner_version=scanner_version,
         scanner_exit_code=scanner_exit_code,
     )

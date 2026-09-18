@@ -7,11 +7,13 @@ import os
 import re
 import subprocess
 import sys
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .osv_adapter import inconclusive_receipt, map_report, validate_report
+from .artifact_snapshot import ArtifactSnapshot
 from .scanner_execution import component_for_error, make_execution_evidence
 
 PRODUCER_VERSION = "0.1.0"
@@ -27,6 +29,7 @@ OSV_REQUIRED_COMPONENTS = (
     "result_semantics",
 )
 OSV_SCANNER_CONTRACT = "osv-scanner-v2-lockfile-json-v1"
+_SNAPSHOT_META: ContextVar[dict[str, Any]] = ContextVar("osv_snapshot_meta", default={})
 
 
 def sha256(path: Path) -> str:
@@ -96,7 +99,14 @@ def _write_evidence(
     evidence = {
         "schema_version": "project-defined-evidence-manifest-v1",
         "schema_extensions": ["project-defined-scanner-execution-v1"],
-        "artifact": {"ref": str(artifact), "sha256": artifact_hash, "size": artifact.stat().st_size},
+        "artifact": {"ref": str(artifact), "sha256": artifact_hash, "size": _SNAPSHOT_META.get().get("size", 0)},
+        "scan_input": {
+            "kind": "producer-owned-file-snapshot",
+            "source_ref": str(artifact),
+            "sha256": artifact_hash,
+            "size": _SNAPSHOT_META.get().get("size", 0),
+            "retained": False,
+        },
         "scanner": {
             "name": "osv-scanner",
             "version": scanner_version,
@@ -153,6 +163,8 @@ def _finish_inconclusive(
         raw_path=raw_path,
         execution=execution,
     )
+    if not artifact_hash:
+        return 1
     receipt = inconclusive_receipt(
         artifact_ref=str(artifact),
         artifact_sha256=artifact_hash,
@@ -188,7 +200,19 @@ def run(binary: str, artifact: Path, out: Path) -> int:
     raw_path = out / "osv.raw.json"
     stderr_path = out / "osv.stderr.log"
     raw_path.unlink(missing_ok=True)
-    artifact_hash = sha256(artifact)
+    try:
+        snapshot = ArtifactSnapshot.create(artifact)
+    except OSError:
+        _SNAPSHOT_META.set({})
+        execution = _preflight_execution("artifact_snapshot_failed")
+        return _finish_inconclusive(out=out, artifact=artifact, artifact_hash="", binary_hash=None,
+                                    scanner_version="unavailable", argv=[], started=None,
+                                    completed=None, exit_code=None, raw_path=raw_path,
+                                    execution=execution)
+    _SNAPSHOT_META.set({"size": snapshot.size, "source_ref": snapshot.source_ref,
+                        "scan_path": str(snapshot.scan_path), "sha256": snapshot.sha256})
+    artifact_hash = snapshot.sha256
+    scan_target = snapshot.scan_path
 
     try:
         binary_hash = sha256(Path(binary))
@@ -245,7 +269,7 @@ def run(binary: str, artifact: Path, out: Path) -> int:
         )
 
     started = _now()
-    argv = [binary, "scan", "--format", "json", "-L", str(artifact)]
+    argv = [binary, "scan", "--format", "json", "-L", str(scan_target)]
     try:
         proc = subprocess.run(argv, capture_output=True, text=True)
     except Exception as exc:  # fail closed for platform-specific subprocess failures
@@ -427,7 +451,7 @@ def run(binary: str, artifact: Path, out: Path) -> int:
     try:
         validate_report(
             raw,
-            artifact_ref=str(artifact),
+            artifact_ref=str(scan_target),
             scanner_version=version,
             scanner_exit_code=exit_code,
         )
@@ -493,6 +517,7 @@ def run(binary: str, artifact: Path, out: Path) -> int:
         receipt = map_report(
             raw,
             artifact_ref=str(artifact),
+            scan_target_ref=str(scan_target),
             artifact_sha256=artifact_hash,
             scanner_version=version,
             scanner_exit_code=exit_code,
@@ -531,6 +556,23 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             execution=execution,
         )
 
+    try:
+        snapshot.verify_unchanged()
+    except (OSError, ValueError):
+        execution = make_execution_evidence(
+            invocation_started=True, process_completed=True, exit_code=exit_code,
+            exit_state_valid=True, output_present=True, output_parseable=True,
+            output_exists=True, output_size=raw_path.stat().st_size,
+            required_components=OSV_REQUIRED_COMPONENTS,
+            completed_components=["scanner_process", "scanner_output", "result_sections", "source_binding"],
+            failed_components=["artifact_binding"], result_semantics_consistent=True,
+            completeness_reason="artifact_snapshot_changed",
+            scanner_contract=OSV_SCANNER_CONTRACT, fatal_failure=True,
+        )
+        return _finish_inconclusive(out=out, artifact=artifact, artifact_hash=artifact_hash,
+                                    binary_hash=binary_hash, scanner_version=version,
+                                    argv=argv, started=started, completed=completed,
+                                    exit_code=exit_code, raw_path=raw_path, execution=execution)
     _write_json(out / "receipt.json", receipt)
     return 0
 

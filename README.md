@@ -13,6 +13,23 @@ They do not claim server safety, provenance/name custody, cryptographic
 attestation, signatures, PKI, scanner reputation, or Registry adoption.
 Admission remains the downstream gate's job.
 
+## Producer-owned file snapshots
+
+Trivy filesystem and OSV lockfile runs first copy the consumer subject into a
+unique producer-owned private temporary directory. The producer hashes and
+sizes that completed snapshot, passes the snapshot path to the scanner, and
+verifies the snapshot digest again after scanning. Evidence records the
+original `artifact.ref` separately from `scan_input`, whose digest and size
+describe the bytes actually exposed to the scanner. This closes the
+`hash(source A) -> replace source -> scan(source B)` path-replacement gap and
+fails closed with `artifact_snapshot_changed` if the producer-owned snapshot
+itself drifts.
+
+The snapshot prevents the scanner from reopening the shared/original path; it
+does not claim to defeat a fully privileged attacker that can modify
+producer-private files during execution. Core and Dogfood continue to verify
+downstream artifact binding independently.
+
 ## Scanner execution completeness
 
 Zero findings does not prove that the scanner completed. A scanner can crash,
@@ -112,7 +129,7 @@ python -m src.osv_producer \
 ```
 
 OSV writes `osv.raw.json`, `osv.stderr.log`, `evidence.json`, and `receipt.json`.
-The exact invocation uses `scan --format json -L <artifact>`. Scanner exit codes
+The exact invocation uses `scan --format json -L <producer-snapshot>`. Scanner exit codes
 `0` (packages found, no findings) and `1` (findings) are valid result states;
 no-package/error states are fail-closed as inconclusive. The adapter requires
 every reported source path to bind to the requested artifact, at least one

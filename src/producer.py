@@ -6,11 +6,13 @@ import json
 import os
 import subprocess
 import sys
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .adapter import inconclusive_receipt, map_report, validate_report
+from .artifact_snapshot import ArtifactSnapshot
 from .scanner_execution import component_for_error, make_execution_evidence
 
 PRODUCER_VERSION = "0.1.0"
@@ -27,6 +29,7 @@ TRIVY_REQUIRED_COMPONENTS = (
     "result_semantics",
 )
 TRIVY_SCANNER_CONTRACT = "trivy-fs-json-v1"
+_SNAPSHOT_META: ContextVar[dict[str, Any]] = ContextVar("trivy_snapshot_meta", default={})
 
 
 def sha256(path: Path) -> str:
@@ -104,7 +107,14 @@ def _write_evidence(
     evidence = {
         "schema_version": "project-defined-evidence-manifest-v1",
         "schema_extensions": ["project-defined-scanner-execution-v1"],
-        "artifact": {"ref": str(artifact), "sha256": artifact_hash, "size": artifact.stat().st_size},
+        "artifact": {"ref": str(artifact), "sha256": artifact_hash, "size": _SNAPSHOT_META.get().get("size", 0)},
+        "scan_input": {
+            "kind": "producer-owned-file-snapshot",
+            "source_ref": str(artifact),
+            "sha256": artifact_hash,
+            "size": _SNAPSHOT_META.get().get("size", 0),
+            "retained": False,
+        },
         "scanner": {
             "name": "trivy",
             "version": scanner_version,
@@ -153,6 +163,8 @@ def _finish_inconclusive(
         raw_path=raw_path,
         execution=execution,
     )
+    if not artifact_hash:
+        return 1
     receipt = inconclusive_receipt(
         artifact_ref=str(artifact),
         artifact_sha256=artifact_hash,
@@ -188,7 +200,19 @@ def run(binary: str, artifact: Path, out: Path) -> int:
     raw_path, stderr_path = out / "trivy.raw.json", out / "trivy.stderr.log"
     # A previous valid report must never be reused after a new invocation fails.
     raw_path.unlink(missing_ok=True)
-    artifact_hash = sha256(artifact)
+    try:
+        snapshot = ArtifactSnapshot.create(artifact)
+    except OSError:
+        _SNAPSHOT_META.set({})
+        execution = _preflight_execution("artifact_snapshot_failed")
+        return _finish_inconclusive(out=out, artifact=artifact, artifact_hash="", binary_hash=None,
+                                    scanner_version="unavailable", argv=[], started=None,
+                                    completed=None, exit_code=None, raw_path=raw_path,
+                                    execution=execution)
+    _SNAPSHOT_META.set({"size": snapshot.size, "source_ref": snapshot.source_ref,
+                        "scan_path": str(snapshot.scan_path), "sha256": snapshot.sha256})
+    artifact_hash = snapshot.sha256
+    scan_target = snapshot.scan_path
 
     try:
         binary_hash = sha256(Path(binary))
@@ -256,7 +280,7 @@ def run(binary: str, artifact: Path, out: Path) -> int:
         "vuln",
         "--exit-code",
         "0",
-        str(artifact),
+        str(scan_target),
     ]
     try:
         proc = subprocess.run(argv, capture_output=True, text=True)
@@ -386,7 +410,7 @@ def run(binary: str, artifact: Path, out: Path) -> int:
         )
 
     try:
-        validate_report(raw, artifact_ref=str(artifact), scanner_version=version, scanner_exit_code=0)
+        validate_report(raw, artifact_ref=str(scan_target), scanner_version=version, scanner_exit_code=0)
     except ValueError as exc:
         error = str(exc)
         execution = make_execution_evidence(
@@ -449,6 +473,7 @@ def run(binary: str, artifact: Path, out: Path) -> int:
         receipt = map_report(
             raw,
             artifact_ref=str(artifact),
+            scan_target_ref=str(scan_target),
             artifact_sha256=artifact_hash,
             scanner_version=version,
             scanner_exit_code=0,
@@ -487,6 +512,23 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             execution=execution,
         )
 
+    try:
+        snapshot.verify_unchanged()
+    except (OSError, ValueError):
+        execution = make_execution_evidence(
+            invocation_started=True, process_completed=True, exit_code=0,
+            exit_state_valid=True, output_present=True, output_parseable=True,
+            output_exists=True, output_size=raw_path.stat().st_size,
+            required_components=TRIVY_REQUIRED_COMPONENTS,
+            completed_components=["scanner_process", "scanner_output", "result_sections"],
+            failed_components=["artifact_binding"], result_semantics_consistent=True,
+            completeness_reason="artifact_snapshot_changed",
+            scanner_contract=TRIVY_SCANNER_CONTRACT, fatal_failure=True,
+        )
+        return _finish_inconclusive(out=out, artifact=artifact, artifact_hash=artifact_hash,
+                                    binary_hash=binary_hash, scanner_version=version,
+                                    argv=argv, started=started, completed=completed,
+                                    exit_code=0, raw_path=raw_path, execution=execution)
     _write_json(out / "receipt.json", receipt)
     return 0
 
