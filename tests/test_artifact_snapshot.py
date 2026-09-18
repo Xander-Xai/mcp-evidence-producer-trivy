@@ -112,4 +112,15 @@ def test_snapshot_mutation_fails_closed_for_trivy(monkeypatch, tmp_path: Path) -
     evidence = json.loads((out / "evidence.json").read_text())
     assert receipt["verdict"] == "inconclusive"
     assert evidence["scanner_execution"]["completeness_reason"] == "artifact_snapshot_changed"
+    assert evidence["scanner_execution"]["failed_components"] == ["artifact_binding"]
 
+
+def test_missing_subject_does_not_emit_empty_digest_identity(tmp_path: Path) -> None:
+    binary = tmp_path / "trivy"
+    binary.write_bytes(b"trivy")
+    missing = tmp_path / "missing.txt"
+    out = tmp_path / "out"
+    assert producer.run(str(binary), missing, out) == 1
+    assert not (out / "receipt.json").exists()
+    evidence = json.loads((out / "evidence.json").read_text())
+    assert evidence["artifact"]["sha256"] == ""
