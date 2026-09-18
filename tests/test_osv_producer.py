@@ -46,13 +46,16 @@ def _setup_verified_binary(monkeypatch, tmp_path: Path) -> tuple[Path, Path]:
     return binary, artifact
 
 
+def _stub_scan(monkeypatch, *, vulnerable: bool, exit_code: int) -> None:
+    def fake_run(argv, **_kwargs):
+        return SimpleNamespace(returncode=exit_code, stdout=_report(Path(argv[-1]), vulnerable), stderr="")
+
+    monkeypatch.setattr(osv_producer.subprocess, "run", fake_run)
+
+
 def test_valid_findings_are_successful_evidence_production(monkeypatch, tmp_path: Path) -> None:
     binary, artifact = _setup_verified_binary(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        osv_producer.subprocess,
-        "run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=_report(artifact, True), stderr=""),
-    )
+    _stub_scan(monkeypatch, vulnerable=True, exit_code=1)
     out = tmp_path / "out"
     assert osv_producer.run(str(binary), artifact, out) == 0
     receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
@@ -66,11 +69,7 @@ def test_valid_findings_are_successful_evidence_production(monkeypatch, tmp_path
 
 def test_valid_clean_scan_is_successful_evidence_production(monkeypatch, tmp_path: Path) -> None:
     binary, artifact = _setup_verified_binary(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        osv_producer.subprocess,
-        "run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=_report(artifact, False), stderr=""),
-    )
+    _stub_scan(monkeypatch, vulnerable=False, exit_code=0)
     out = tmp_path / "out"
     assert osv_producer.run(str(binary), artifact, out) == 0
     receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
@@ -112,11 +111,7 @@ def test_malformed_json_is_inconclusive(monkeypatch, tmp_path: Path) -> None:
 
 def test_exit_and_raw_result_contradiction_is_inconclusive(monkeypatch, tmp_path: Path) -> None:
     binary, artifact = _setup_verified_binary(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        osv_producer.subprocess,
-        "run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout=_report(artifact, False), stderr=""),
-    )
+    _stub_scan(monkeypatch, vulnerable=False, exit_code=1)
     out = tmp_path / "out"
     assert osv_producer.run(str(binary), artifact, out) == 1
     receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))

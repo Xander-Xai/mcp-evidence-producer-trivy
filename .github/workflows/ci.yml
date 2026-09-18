@@ -31,7 +31,7 @@ jobs:
         run: |
           python -m src.producer --trivy ./trivy --artifact artifacts/requirements.txt --out out
           git clone https://github.com/yandexuanxuan/mcp-evidence-gate.git core
-          git -C core checkout --detach d404b38f0ac0303438b561fe7358b0eec487c962
+          git -C core checkout --detach 52c224b36a54e450dbe25ad56988f29e4795753e
           corepack enable
           corepack prepare pnpm@10.33.4 --activate
           pnpm --dir core install --frozen-lockfile
@@ -42,7 +42,7 @@ jobs:
           set -e
           test "$code" = "0" -o "$code" = "1" -o "$code" = "2"
           node -e "const fs=require('fs'); const g=JSON.parse(fs.readFileSync('gate.json')); const r=JSON.parse(fs.readFileSync('out/receipt.json')); if(g.receiptVerdict!==r.verdict || (r.verdict==='findings' && g.decision!=='fail') || (r.verdict==='clean' && g.decision==='fail')) process.exit(1);"
-          node -e "const fs=require('fs'),c=require('crypto'); const a=fs.readFileSync('artifacts/requirements.txt'); const e=fs.readFileSync('out/evidence.json'); const r=JSON.parse(fs.readFileSync('out/receipt.json')); if(r.scanned_artifact_digest!=='sha256:'+c.createHash('sha256').update(a).digest('hex')) process.exit(1); if(r.evidence_digest!=='sha256:'+c.createHash('sha256').update(e).digest('hex')) process.exit(1); if(r.scanner_version!=='0.74.0') process.exit(1);"
+          node -e "const fs=require('fs'),c=require('crypto'); const a=fs.readFileSync('artifacts/requirements.txt'); const e=fs.readFileSync('out/evidence.json'); const r=JSON.parse(fs.readFileSync('out/receipt.json')); const x=JSON.parse(e); if(r.scanned_artifact_digest!=='sha256:'+x.scan_input.sha256) process.exit(1); if(x.artifact.sha256!==x.scan_input.sha256 || x.artifact.size!==x.scan_input.size) process.exit(1); if(r.evidence_digest!=='sha256:'+c.createHash('sha256').update(e).digest('hex')) process.exit(1); if(r.scanner_version!=='0.74.0') process.exit(1);"
           node -e "const fs=require('fs'); const e=JSON.parse(fs.readFileSync('out/evidence.json')); const x=e.scanner_execution; if(x?.completeness_status!=='complete' || x.required_work_completed!==true || x.result_semantics_consistent!==true || x.invocation_started!==true || x.process_completed!==true || x.output_present!==true || x.output_parseable!==true) process.exit(1);"
 
   real-osv-consumer:
@@ -71,7 +71,7 @@ jobs:
           python -m src.osv_producer --osv ./osv-scanner --artifact artifacts/requirements.txt --out out-osv
 
           git clone https://github.com/yandexuanxuan/mcp-evidence-gate.git core-osv
-          git -C core-osv checkout --detach f736023aa23c48e9f667325f84282c8546c4aa57
+          git -C core-osv checkout --detach 52c224b36a54e450dbe25ad56988f29e4795753e
           corepack enable
           corepack prepare pnpm@10.33.4 --activate
           pnpm --dir core-osv install --frozen-lockfile
@@ -102,7 +102,8 @@ jobs:
           if (receipt.scanner !== 'osv-scanner') process.exit(1);
           if (receipt.scanner_version !== '2.5.1') process.exit(1);
           if (!['clean', 'findings'].includes(receipt.verdict)) process.exit(1);
-          if (receipt.scanned_artifact_digest !== 'sha256:' + sha(artifact)) process.exit(1);
+          if (receipt.scanned_artifact_digest !== 'sha256:' + evidence.scan_input.sha256) process.exit(1);
+          if (evidence.artifact.sha256 !== evidence.scan_input.sha256 || evidence.artifact.size !== evidence.scan_input.size) process.exit(1);
           if (receipt.evidence_digest !== 'sha256:' + sha(evidenceBytes)) process.exit(1);
           if (evidence.scanner?.binary_sha256 !== 'f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be') process.exit(1);
           if (![0, 1].includes(evidence.invocation?.exit_code)) process.exit(1);

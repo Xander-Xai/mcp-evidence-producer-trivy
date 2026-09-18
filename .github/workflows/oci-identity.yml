@@ -24,7 +24,7 @@ jobs:
       ROOT_REF: ghcr.io/containers/kubernetes-mcp-server@sha256:7cba55569933e79d8b877607a0413c62faa23f0b281a99144ebb07f853539c82
       ROOT_DIGEST: sha256:7cba55569933e79d8b877607a0413c62faa23f0b281a99144ebb07f853539c82
       PLATFORM_DIGEST: sha256:a60d068656fa8b57fb6f55565e439813aca7f44219e3239575c2e749d5f60bf7
-      CORE_SHA: d5abcdc28d6e288da15ec69b16901ec604da5617
+      CORE_SHA: 52c224b36a54e450dbe25ad56988f29e4795753e
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
