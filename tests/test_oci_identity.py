@@ -9,6 +9,7 @@ from src.oci_identity import (
     OCI_MANIFEST,
     ManifestResponse,
     OciIdentityError,
+    RegistryClient,
     parse_reference,
     resolve_oci_identity,
     sha256_bytes,
@@ -217,3 +218,38 @@ def test_direct_manifest_digest_remains_exact_manifest_identity():
     assert resolved.record["root"]["digest"] == digest
     assert resolved.record["selected"]["manifest_digest"] == digest
     assert resolved.record["selected"]["selection_source"] == "direct-manifest"
+
+
+def test_platform_descriptor_requires_media_type() -> None:
+    index, amd64, _ = fixture_documents()
+    broken = json.loads(index)
+    del broken["manifests"][0]["mediaType"]
+    broken_index = encoded(broken)
+    root_digest = sha256_bytes(broken_index)
+    amd64_digest = sha256_bytes(amd64)
+
+    def fetch(_registry: str, _repository: str, reference: str) -> ManifestResponse:
+        if reference == root_digest:
+            return response(broken_index, OCI_INDEX)
+        if reference == amd64_digest:
+            return response(amd64, OCI_MANIFEST)
+        raise AssertionError(reference)
+
+    with pytest.raises(OciIdentityError, match="platform_manifest_media_type_mismatch"):
+        resolve_oci_identity(
+            f"ghcr.io/example/tool@{root_digest}",
+            os_name="linux",
+            architecture="amd64",
+            fetch_manifest=fetch,
+        )
+
+
+def test_registry_transport_failure_is_structured(monkeypatch) -> None:
+    client = RegistryClient()
+
+    def fail_open(_url: str, _headers) -> None:
+        raise OSError("network unavailable")
+
+    monkeypatch.setattr(client, "_open", fail_open)
+    with pytest.raises(OciIdentityError, match="registry_manifest_transport_failed"):
+        client.fetch_manifest("ghcr.io", "example/tool", "sha256:" + "a" * 64)
