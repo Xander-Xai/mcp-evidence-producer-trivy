@@ -16,6 +16,8 @@ def complete_execution() -> dict:
         exit_state_valid=True,
         output_present=True,
         output_parseable=True,
+        output_exists=True,
+        output_size=1,
         required_components=components,
         completed_components=components,
         result_semantics_consistent=True,
