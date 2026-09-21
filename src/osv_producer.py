@@ -128,7 +128,7 @@ def _write_evidence(
         "producer": {
             "name": "mcp-evidence-producer-osv",
             "version": PRODUCER_VERSION,
-            "repository": "yandexuanxuan/mcp-evidence-producer-trivy",
+            "repository": "Xander-Xai/mcp-evidence-producer-trivy",
         },
     }
     evidence_path = out / "evidence.json"

@@ -115,6 +115,11 @@ def execution_is_complete(
         return False
     if execution.get("output_present") is not True or execution.get("output_parseable") is not True:
         return False
+    if execution.get("output_exists") is not True:
+        return False
+    output_size = execution.get("output_size")
+    if not isinstance(output_size, int) or isinstance(output_size, bool) or output_size <= 0:
+        return False
     if execution.get("result_semantics_consistent") is not True:
         return False
 

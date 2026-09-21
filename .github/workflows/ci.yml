@@ -37,8 +37,8 @@ jobs:
         run: |
           python -m src.producer --trivy ./trivy --artifact artifacts/requirements.txt --out out
           git clone https://github.com/Xander-Xai/mcp-evidence-gate.git core
-          git -C core checkout --detach 52c224b36a54e450dbe25ad56988f29e4795753e
-          test "$(git -C core rev-parse HEAD)" = "52c224b36a54e450dbe25ad56988f29e4795753e"
+          git -C core checkout --detach 8c6d19b9ad90d6f066fa6fd1f41d0a8da3b017f3
+          test "$(git -C core rev-parse HEAD)" = "8c6d19b9ad90d6f066fa6fd1f41d0a8da3b017f3"
           corepack enable
           corepack prepare pnpm@10.33.4 --activate
           pnpm --dir core install --frozen-lockfile
@@ -78,8 +78,8 @@ jobs:
           python -m src.osv_producer --osv ./osv-scanner --artifact artifacts/requirements.txt --out out-osv
 
           git clone https://github.com/Xander-Xai/mcp-evidence-gate.git core-osv
-          git -C core-osv checkout --detach 52c224b36a54e450dbe25ad56988f29e4795753e
-          test "$(git -C core-osv rev-parse HEAD)" = "52c224b36a54e450dbe25ad56988f29e4795753e"
+          git -C core-osv checkout --detach 8c6d19b9ad90d6f066fa6fd1f41d0a8da3b017f3
+          test "$(git -C core-osv rev-parse HEAD)" = "8c6d19b9ad90d6f066fa6fd1f41d0a8da3b017f3"
           corepack enable
           corepack prepare pnpm@10.33.4 --activate
           pnpm --dir core-osv install --frozen-lockfile
