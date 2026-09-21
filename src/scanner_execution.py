@@ -55,11 +55,15 @@ def make_execution_evidence(
     failed = _unique(failed_components)
 
     all_required_completed = all(component in completed for component in required)
+    effective_output_exists = output_exists if output_exists is not None else output_present
+    output_size_valid = isinstance(output_size, int) and not isinstance(output_size, bool) and output_size > 0
     if not invocation_started or not process_completed or fatal_failure:
         status = "failed"
     elif not (
         exit_state_valid
         and output_present
+        and effective_output_exists
+        and output_size_valid
         and output_parseable
         and all_required_completed
         and not failed
@@ -83,7 +87,7 @@ def make_execution_evidence(
         # ``output_exists`` and ``output_size`` retain the distinction between
         # missing and empty output for audit and regression diagnosis.
         "output_present": output_present,
-        "output_exists": output_exists if output_exists is not None else output_present,
+        "output_exists": effective_output_exists,
         "output_size": output_size,
         "output_parseable": output_parseable,
         "required_components": required,

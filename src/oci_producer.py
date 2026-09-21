@@ -191,6 +191,18 @@ def run(
     variant: str | None = None,
 ) -> int:
     out.mkdir(parents=True, exist_ok=True)
+    # A reused output directory must never expose artifacts from a prior run.
+    for stale_name in (
+        "receipt.json",
+        "evidence.json",
+        "oci-error.json",
+        "oci-identity.json",
+        "oci.index.json",
+        "oci.manifest.json",
+        "trivy.raw.json",
+        "trivy.stderr.log",
+    ):
+        (out / stale_name).unlink(missing_ok=True)
 
     try:
         requested = parse_reference(image)
