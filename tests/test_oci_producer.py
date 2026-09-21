@@ -99,3 +99,23 @@ def test_oci_empty_results_are_inconclusive(monkeypatch, tmp_path: Path) -> None
     assert receipt["verdict"] == "inconclusive"
     assert evidence["scanner_execution"]["completeness_reason"] == "trivy_result_sections_missing"
     assert evidence["scanner_execution"]["failed_components"] == ["result_sections"]
+
+
+def test_oci_reused_output_directory_clears_prior_success(monkeypatch, tmp_path: Path) -> None:
+    binary, image, _digest, _manifest = _setup(monkeypatch, tmp_path)
+    _stub_scan(monkeypatch, image, output=True)
+    out = tmp_path / "out"
+    assert oci_producer.run(binary.as_posix(), image, out, os_name="linux", architecture="amd64") == 0
+    assert (out / "receipt.json").exists()
+    assert (out / "evidence.json").exists()
+
+    assert oci_producer.run(
+        binary.as_posix(),
+        "ghcr.io/example/tool:latest",
+        out,
+        os_name="linux",
+        architecture="amd64",
+    ) == 1
+    assert not (out / "receipt.json").exists()
+    assert not (out / "evidence.json").exists()
+    assert json.loads((out / "oci-error.json").read_text(encoding="utf-8"))["error"] == "mutable_oci_reference_rejected"
