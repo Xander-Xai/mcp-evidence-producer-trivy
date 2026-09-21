@@ -195,7 +195,11 @@ def resolve_oci_identity(
         if not isinstance(descriptor_size, int) or descriptor_size != len(selected_response.body):
             raise OciIdentityError("platform_manifest_size_mismatch")
         descriptor_media_type = selected_descriptor.get("mediaType")
-        if descriptor_media_type is not None and descriptor_media_type != selected_media_type:
+        if (
+            not isinstance(descriptor_media_type, str)
+            or descriptor_media_type not in MANIFEST_MEDIA_TYPES
+            or descriptor_media_type != selected_media_type
+        ):
             raise OciIdentityError("platform_manifest_media_type_mismatch")
         manifest_body = selected_response.body
         manifest_digest = selected_actual_digest
@@ -301,10 +305,17 @@ class RegistryClient:
                 response = self._open(url, headers)
             except urllib.error.HTTPError as retry_error:
                 raise OciIdentityError(f"registry_manifest_http_{retry_error.code}") from retry_error
+            except OSError as retry_error:
+                raise OciIdentityError("registry_manifest_transport_failed") from retry_error
+        except OSError as error:
+            raise OciIdentityError("registry_manifest_transport_failed") from error
         try:
-            body = response.read()
-            content_type = response.headers.get("Content-Type")
-            docker_digest = response.headers.get("Docker-Content-Digest")
+            try:
+                body = response.read()
+                content_type = response.headers.get("Content-Type")
+                docker_digest = response.headers.get("Docker-Content-Digest")
+            except OSError as error:
+                raise OciIdentityError("registry_manifest_transport_failed") from error
         finally:
             response.close()
         return ManifestResponse(
