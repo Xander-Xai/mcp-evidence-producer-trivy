@@ -10,6 +10,7 @@ import pytest
 
 from src import producer
 from src.adapter import map_report
+from src.scanner_execution import execution_is_complete, make_execution_evidence
 
 
 def _sha(path: Path) -> str:
@@ -170,3 +171,33 @@ def test_valid_report_without_execution_evidence_cannot_be_clean() -> None:
             scanner_version="0.74.0",
             scanner_exit_code=0,
         )
+
+
+@pytest.mark.parametrize(
+    "output_exists,output_size",
+    [
+        (None, None),
+        (False, 1),
+        (True, 0),
+        (True, False),
+    ],
+)
+def test_complete_execution_requires_positive_existing_output(output_exists, output_size) -> None:
+    components = ["scanner_process", "scanner_output", "result_sections", "artifact_binding", "result_semantics"]
+    execution = make_execution_evidence(
+        invocation_started=True,
+        process_completed=True,
+        exit_code=0,
+        exit_state_valid=True,
+        output_present=True,
+        output_parseable=True,
+        output_exists=output_exists,
+        output_size=output_size,
+        required_components=components,
+        completed_components=components,
+        result_semantics_consistent=True,
+        scanner_contract="trivy-fs-json-v1",
+    )
+    assert execution["completeness_status"] == "incomplete"
+    assert execution["required_work_completed"] is False
+    assert execution_is_complete(execution, expected_exit_codes=[0]) is False
