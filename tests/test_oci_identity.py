@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 
 import pytest
@@ -251,5 +252,22 @@ def test_registry_transport_failure_is_structured(monkeypatch) -> None:
         raise OSError("network unavailable")
 
     monkeypatch.setattr(client, "_open", fail_open)
+    with pytest.raises(OciIdentityError, match="registry_manifest_transport_failed"):
+        client.fetch_manifest("ghcr.io", "example/tool", "sha256:" + "a" * 64)
+
+
+def test_registry_truncated_manifest_read_is_structured(monkeypatch) -> None:
+    client = RegistryClient()
+
+    class TruncatedResponse:
+        headers = {}
+
+        def read(self):
+            raise http.client.IncompleteRead(b"partial", 10)
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(client, "_open", lambda _url, _headers: TruncatedResponse())
     with pytest.raises(OciIdentityError, match="registry_manifest_transport_failed"):
         client.fetch_manifest("ghcr.io", "example/tool", "sha256:" + "a" * 64)

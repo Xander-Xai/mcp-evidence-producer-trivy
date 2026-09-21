@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import re
 import urllib.error
@@ -314,7 +315,7 @@ class RegistryClient:
                 body = response.read()
                 content_type = response.headers.get("Content-Type")
                 docker_digest = response.headers.get("Docker-Content-Digest")
-            except OSError as error:
+            except (OSError, http.client.HTTPException) as error:
                 raise OciIdentityError("registry_manifest_transport_failed") from error
         finally:
             response.close()
