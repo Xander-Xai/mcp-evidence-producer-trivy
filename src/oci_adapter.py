@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from collections.abc import Mapping
 from typing import Any
 
-from .adapter import PROFILE, SCOPE
+from .adapter import PROFILE, SCOPE, validate_vulnerability_severity
 from .scanner_execution import execution_is_complete
 
 
@@ -58,6 +58,8 @@ def validate_image_report(
         vulnerabilities = item.get("Vulnerabilities")
         if vulnerabilities is not None and not isinstance(vulnerabilities, list):
             raise ValueError("malformed_trivy_image_report")
+        for vulnerability in vulnerabilities or []:
+            validate_vulnerability_severity(vulnerability)
         findings += len(vulnerabilities or [])
     if scanner_exit_code is not None and scanner_exit_code != 0:
         raise ValueError("trivy_exit_code_invalid")

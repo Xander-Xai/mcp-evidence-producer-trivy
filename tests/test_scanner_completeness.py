@@ -201,3 +201,57 @@ def test_complete_execution_requires_positive_existing_output(output_exists, out
     assert execution["completeness_status"] == "incomplete"
     assert execution["required_work_completed"] is False
     assert execution_is_complete(execution, expected_exit_codes=[0]) is False
+
+@pytest.mark.parametrize("severity", ["future-severity-v1", ""])
+def test_unknown_severity_is_fail_closed(severity: str) -> None:
+    raw = {
+        "Trivy": {"Version": "0.74.0"},
+        "ArtifactName": "artifact.txt",
+        "Results": [{"Target": "artifact.txt", "Class": "lang-pkgs", "Type": "python",
+                     "Vulnerabilities": [{"VulnerabilityID": "CVE-TEST", "Severity": severity}]}],
+    }
+    with pytest.raises(ValueError, match="unsupported_severity"):
+        map_report(raw, artifact_ref="artifact.txt", artifact_sha256="a" * 64,
+                   scanner_version="0.74.0", scanner_exit_code=0)
+
+
+def test_known_and_unknown_severity_cannot_hide_unknown() -> None:
+    raw = {
+        "Trivy": {"Version": "0.74.0"},
+        "ArtifactName": "artifact.txt",
+        "Results": [{"Target": "artifact.txt", "Class": "lang-pkgs", "Type": "python",
+                     "Vulnerabilities": [{"VulnerabilityID": "CVE-KNOWN", "Severity": "LOW"},
+                                           {"VulnerabilityID": "CVE-FUTURE", "Severity": "future-severity-v1"}]}],
+    }
+    with pytest.raises(ValueError, match="unsupported_severity"):
+        map_report(raw, artifact_ref="artifact.txt", artifact_sha256="a" * 64,
+                   scanner_version="0.74.0", scanner_exit_code=0)
+
+
+def test_trivy_native_unknown_severity_remains_a_finding() -> None:
+    raw = {
+        "Trivy": {"Version": "0.74.0"},
+        "ArtifactName": "artifact.txt",
+        "Results": [{"Target": "artifact.txt", "Class": "lang-pkgs", "Type": "python",
+                     "Vulnerabilities": [{"VulnerabilityID": "CVE-UNKNOWN", "Severity": "UNKNOWN"}]}],
+    }
+    receipt = map_report(raw, artifact_ref="artifact.txt", artifact_sha256="a" * 64,
+                         scanner_version="0.74.0", scanner_exit_code=0,
+                         scanner_execution={
+                             "schema_version": "project-defined-scanner-execution-v1",
+                             "required_components": ["scanner_process"],
+                             "completed_components": ["scanner_process"],
+                             "failed_components": [],
+                             "completeness_status": "complete",
+                             "invocation_started": True,
+                             "process_completed": True,
+                             "exit_state_valid": True,
+                             "output_present": True,
+                             "output_parseable": True,
+                             "required_work_completed": True,
+                             "result_semantics_consistent": True,
+                             "exit_code": 0,
+                             "output_exists": True,
+                             "output_size": 1,
+                         })
+    assert receipt["verdict"] == "findings"
