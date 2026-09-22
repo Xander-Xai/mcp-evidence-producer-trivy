@@ -9,6 +9,19 @@ from .scanner_execution import execution_is_complete
 
 SCOPE = "dependency-vulnerabilities"
 PROFILE = "registry-pr-1404@20747d3253ba8638161dd95f1cec70df02993c22"
+# Trivy emits the literal UNKNOWN category for findings whose upstream
+# severity cannot be classified. It is a known scanner value, but it remains a
+# finding; only unrecognised future values are rejected.
+KNOWN_SEVERITIES = {"critical", "high", "medium", "low", "unknown"}
+
+
+def validate_vulnerability_severity(vulnerability: Any) -> None:
+    """Reject explicit severity values that this consumer cannot classify."""
+    if not isinstance(vulnerability, Mapping):
+        raise ValueError("malformed_trivy_vulnerability")
+    severity = vulnerability.get("Severity")
+    if severity is not None and (not isinstance(severity, str) or severity.lower() not in KNOWN_SEVERITIES):
+        raise ValueError("unsupported_severity")
 
 
 def _now() -> str:
@@ -57,6 +70,8 @@ def validate_report(
         vulnerabilities = item.get("Vulnerabilities")
         if vulnerabilities is not None and not isinstance(vulnerabilities, list):
             raise ValueError("malformed_trivy_report")
+        for vulnerability in vulnerabilities or []:
+            validate_vulnerability_severity(vulnerability)
         findings += len(vulnerabilities or [])
     if scanner_exit_code is not None and scanner_exit_code != 0:
         # The invocation contract pins --exit-code 0.  A different process
