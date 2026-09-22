@@ -470,6 +470,23 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             execution=execution,
         )
 
+    if scanner_contract == TRIVY_PACKAGE_SCANNER_CONTRACT and (not isinstance(raw.get("Results"), list) or not raw.get("Results")):
+        coverage = _SNAPSHOT_META.get().get("scan_coverage") or {}
+        complete = coverage.get("status") == "no_supported_targets"
+        execution = make_execution_evidence(
+            invocation_started=True, process_completed=True, exit_code=0, exit_state_valid=True,
+            output_present=True, output_parseable=True, output_exists=True, output_size=size,
+            required_components=required_components,
+            completed_components=required_components if complete else None,
+            failed_components=[] if complete else ["result_semantics"],
+            result_semantics_consistent=complete,
+            completeness_reason="no_supported_dependency_targets" if complete else "supported_target_result_missing",
+            scanner_contract=scanner_contract)
+        return _finish_inconclusive(out=out, artifact=artifact, artifact_hash=artifact_hash,
+                                    binary_hash=binary_hash, scanner_version=version, argv=argv,
+                                    started=started, completed=completed, exit_code=0, raw_path=raw_path,
+                                    execution=execution)
+
     try:
         validate_report(raw, artifact_ref=str(scan_target), scanner_version=version, scanner_exit_code=0)
     except ValueError as exc:
@@ -572,30 +589,6 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             raw_path=raw_path,
             execution=execution,
         )
-
-    if scanner_contract == TRIVY_PACKAGE_SCANNER_CONTRACT and (not isinstance(raw.get("Results"), list) or not raw.get("Results")):
-        coverage = _SNAPSHOT_META.get().get("scan_coverage") or {}
-        if coverage.get("status") == "no_supported_targets":
-            execution = make_execution_evidence(
-                invocation_started=True, process_completed=True, exit_code=0, exit_state_valid=True,
-                output_present=True, output_parseable=True, output_exists=True, output_size=size,
-                required_components=required_components, completed_components=required_components,
-                result_semantics_consistent=True, completeness_reason="no_supported_dependency_targets",
-                scanner_contract=scanner_contract)
-            return _finish_inconclusive(out=out, artifact=artifact, artifact_hash=artifact_hash,
-                                        binary_hash=binary_hash, scanner_version=version, argv=argv,
-                                        started=started, completed=completed, exit_code=0, raw_path=raw_path,
-                                        execution=execution)
-        execution = make_execution_evidence(
-            invocation_started=True, process_completed=True, exit_code=0, exit_state_valid=True,
-            output_present=True, output_parseable=True, output_exists=True, output_size=size,
-            required_components=required_components, failed_components=["result_semantics"],
-            result_semantics_consistent=False, completeness_reason="supported_target_result_missing",
-            scanner_contract=scanner_contract)
-        return _finish_inconclusive(out=out, artifact=artifact, artifact_hash=artifact_hash,
-                                    binary_hash=binary_hash, scanner_version=version, argv=argv,
-                                    started=started, completed=completed, exit_code=0, raw_path=raw_path,
-                                    execution=execution)
 
     try:
         if archive_view is not None:
