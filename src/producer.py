@@ -14,6 +14,7 @@ from typing import Any
 from .adapter import inconclusive_receipt, map_report, validate_report
 from .artifact_snapshot import ArtifactSnapshot
 from .scanner_execution import component_for_error, make_execution_evidence
+from .package_archive import ArchiveValidationError, PackageArchiveView, POLICY, is_npm_archive
 
 PRODUCER_VERSION = "0.1.0"
 PINNED_TRIVY_VERSION = "0.74.0"
@@ -29,6 +30,11 @@ TRIVY_REQUIRED_COMPONENTS = (
     "result_semantics",
 )
 TRIVY_SCANNER_CONTRACT = "trivy-fs-json-v1"
+TRIVY_PACKAGE_SCANNER_CONTRACT = "trivy-fs-npm-package-view-v1"
+TRIVY_ARCHIVE_REQUIRED_COMPONENTS = (
+    "artifact_snapshot", "archive_validation", "archive_extraction", "derived_view_binding",
+    "scanner_process", "scanner_output", "result_sections", "result_semantics",
+)
 _SNAPSHOT_META: ContextVar[dict[str, Any]] = ContextVar("trivy_snapshot_meta", default={})
 
 
@@ -109,7 +115,7 @@ def _write_evidence(
         "schema_extensions": ["project-defined-scanner-execution-v1"],
         "artifact": {"ref": str(artifact), "sha256": artifact_hash, "size": _SNAPSHOT_META.get().get("size", 0)},
         "scan_input": {
-            "kind": "producer-owned-file-snapshot",
+            "kind": _SNAPSHOT_META.get().get("scan_input_kind", "producer-owned-file-snapshot"),
             "source_ref": str(artifact),
             "sha256": artifact_hash,
             "size": _SNAPSHOT_META.get().get("size", 0),
@@ -131,6 +137,17 @@ def _write_evidence(
         "raw_report": _raw_report_metadata(raw_path),
         "producer": {"name": "mcp-evidence-producer-trivy", "version": PRODUCER_VERSION},
     }
+    archive_view = _SNAPSHOT_META.get().get("archive_view")
+    if archive_view:
+        evidence["scan_input"] = {
+            "kind": "producer-owned-package-archive-view",
+            "source_ref": str(artifact),
+            "source_sha256": artifact_hash,
+            "source_size": _SNAPSHOT_META.get().get("size", 0),
+            "archive": archive_view["archive"],
+            "derived_view": archive_view["derived_view"],
+            "extraction": archive_view["extraction"],
+        }
     evidence_path = out / "evidence.json"
     _write_json(evidence_path, evidence)
     return evidence_path
@@ -213,6 +230,37 @@ def run(binary: str, artifact: Path, out: Path) -> int:
                         "scan_path": str(snapshot.scan_path), "sha256": snapshot.sha256})
     artifact_hash = snapshot.sha256
     scan_target = snapshot.scan_path
+    required_components = TRIVY_REQUIRED_COMPONENTS
+    scanner_contract = TRIVY_SCANNER_CONTRACT
+    archive_view = None
+    if is_npm_archive(artifact):
+        try:
+            archive_view = PackageArchiveView.create(snapshot.scan_path)
+        except ArchiveValidationError as exc:
+            execution = make_execution_evidence(
+                invocation_started=False, process_completed=False, exit_code=None,
+                exit_state_valid=False, output_present=False, output_parseable=False,
+                output_exists=False, output_size=None,
+                required_components=TRIVY_ARCHIVE_REQUIRED_COMPONENTS,
+                failed_components=["archive_validation"], result_semantics_consistent=None,
+                completeness_reason=exc.reason, scanner_contract=TRIVY_PACKAGE_SCANNER_CONTRACT,
+                fatal_failure=True,
+            )
+            return _finish_inconclusive(out=out, artifact=artifact, artifact_hash=artifact_hash,
+                                        binary_hash=None, scanner_version="unavailable", argv=[],
+                                        started=None, completed=None, exit_code=None, raw_path=raw_path,
+                                        execution=execution)
+        scan_target = archive_view.root
+        required_components = TRIVY_ARCHIVE_REQUIRED_COMPONENTS
+        scanner_contract = TRIVY_PACKAGE_SCANNER_CONTRACT
+        _SNAPSHOT_META.set({**_SNAPSHOT_META.get(), "scan_input_kind": "producer-owned-package-archive-view",
+                            "archive_view": {
+                                "archive": {"format": "npm-tgz", "compression": "gzip", "member_count": archive_view.member_count},
+                                "derived_view": {"root": str(archive_view.root), "manifest_sha256": archive_view.manifest_sha256,
+                                                  "file_count": len(archive_view.manifest_entries),
+                                                  "total_regular_file_bytes": archive_view.total_regular_file_bytes},
+                                "extraction": {"completed": True, "policy": POLICY},
+                            }})
 
     try:
         binary_hash = sha256(Path(binary))
@@ -296,11 +344,11 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             output_parseable=False,
             output_exists=raw_path.exists(),
             output_size=raw_path.stat().st_size if raw_path.exists() else None,
-            required_components=TRIVY_REQUIRED_COMPONENTS,
+            required_components=required_components,
             failed_components=["scanner_process"],
             result_semantics_consistent=None,
             completeness_reason="scanner_process_failed",
-            scanner_contract=TRIVY_SCANNER_CONTRACT,
+            scanner_contract=scanner_contract,
             fatal_failure=True,
         )
         return _finish_inconclusive(
@@ -342,11 +390,11 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             output_parseable=output_parseable,
             output_exists=exists,
             output_size=size,
-            required_components=TRIVY_REQUIRED_COMPONENTS,
+            required_components=required_components,
             failed_components=["scanner_process"],
             result_semantics_consistent=None,
             completeness_reason="scanner_exit_state_invalid",
-            scanner_contract=TRIVY_SCANNER_CONTRACT,
+            scanner_contract=scanner_contract,
             fatal_failure=True,
         )
         return _finish_inconclusive(
@@ -389,11 +437,11 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             output_parseable=output_parseable,
             output_exists=exists,
             output_size=size,
-            required_components=TRIVY_REQUIRED_COMPONENTS,
+            required_components=required_components,
             failed_components=[failed_component],
             result_semantics_consistent=False if isinstance(raw, dict) else None,
             completeness_reason=reason,
-            scanner_contract=TRIVY_SCANNER_CONTRACT,
+            scanner_contract=scanner_contract,
         )
         return _finish_inconclusive(
             out=out,
@@ -422,11 +470,11 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             output_parseable=True,
             output_exists=True,
             output_size=size,
-            required_components=TRIVY_REQUIRED_COMPONENTS,
+            required_components=required_components,
             failed_components=[component_for_error(error)],
             result_semantics_consistent=False,
             completeness_reason=error,
-            scanner_contract=TRIVY_SCANNER_CONTRACT,
+            scanner_contract=scanner_contract,
         )
         return _finish_inconclusive(
             out=out,
@@ -451,10 +499,10 @@ def run(binary: str, artifact: Path, out: Path) -> int:
         output_parseable=True,
         output_exists=True,
         output_size=size,
-        required_components=TRIVY_REQUIRED_COMPONENTS,
-        completed_components=TRIVY_REQUIRED_COMPONENTS,
+        required_components=required_components,
+        completed_components=required_components,
         result_semantics_consistent=True,
-        scanner_contract=TRIVY_SCANNER_CONTRACT,
+        scanner_contract=scanner_contract,
     )
     evidence_path = _write_evidence(
         out=out,
@@ -492,11 +540,11 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             output_parseable=True,
             output_exists=True,
             output_size=size,
-            required_components=TRIVY_REQUIRED_COMPONENTS,
+            required_components=required_components,
             failed_components=[component_for_error(error)],
             result_semantics_consistent=False,
             completeness_reason=error,
-            scanner_contract=TRIVY_SCANNER_CONTRACT,
+            scanner_contract=scanner_contract,
         )
         return _finish_inconclusive(
             out=out,
@@ -513,17 +561,19 @@ def run(binary: str, artifact: Path, out: Path) -> int:
         )
 
     try:
+        if archive_view is not None:
+            archive_view.verify_unchanged()
         snapshot.verify_unchanged()
     except (OSError, ValueError):
         execution = make_execution_evidence(
             invocation_started=True, process_completed=True, exit_code=0,
             exit_state_valid=True, output_present=True, output_parseable=True,
             output_exists=True, output_size=raw_path.stat().st_size,
-            required_components=TRIVY_REQUIRED_COMPONENTS,
+            required_components=required_components,
             completed_components=["scanner_process", "scanner_output", "result_sections"],
             failed_components=["artifact_binding"], result_semantics_consistent=True,
             completeness_reason="artifact_snapshot_changed",
-            scanner_contract=TRIVY_SCANNER_CONTRACT, fatal_failure=True,
+            scanner_contract=scanner_contract, fatal_failure=True,
         )
         return _finish_inconclusive(out=out, artifact=artifact, artifact_hash=artifact_hash,
                                     binary_hash=binary_hash, scanner_version=version,
