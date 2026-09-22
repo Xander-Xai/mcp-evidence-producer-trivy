@@ -573,7 +573,7 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             execution=execution,
         )
 
-    if scanner_contract == TRIVY_PACKAGE_SCANNER_CONTRACT and not isinstance(raw.get("Results"), list):
+    if scanner_contract == TRIVY_PACKAGE_SCANNER_CONTRACT and (not isinstance(raw.get("Results"), list) or not raw.get("Results")):
         coverage = _SNAPSHOT_META.get().get("scan_coverage") or {}
         if coverage.get("status") == "no_supported_targets":
             execution = make_execution_evidence(
