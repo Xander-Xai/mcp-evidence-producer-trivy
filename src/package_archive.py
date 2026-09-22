@@ -11,7 +11,7 @@ MAX_MEMBER_COUNT = 100_000
 MAX_SINGLE_FILE_BYTES = 64 * 1024 * 1024
 MAX_TOTAL_EXTRACTED_BYTES = 512 * 1024 * 1024
 MAX_PATH_LENGTH = 4096
-SUPPORTED_NPM_DEPENDENCY_FILES = ("package-lock.json", "npm-shrinkwrap.json")
+SUPPORTED_NPM_DEPENDENCY_FILES = ("package-lock.json",)
 
 class ArchiveValidationError(ValueError):
     def __init__(self, reason: str):

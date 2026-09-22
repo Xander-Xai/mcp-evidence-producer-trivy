@@ -21,3 +21,11 @@ No Core schema change is required. Existing plain-file snapshots remain
 unchanged. The threat model covers traversal, links, duplicate paths, bombs,
 TOCTOU mutation, metadata ordering, and archives with identical extracted
 contents but different original bytes.
+
+The supported-target inventory is evidence-based. The pinned Trivy 0.74.0
+positive control produced Results for `package/package-lock.json`; a real
+`npm-shrinkwrap.json` archive did not produce Results, so v1 does not claim
+shrinkwrap support. Normal npm publication commonly excludes
+`package-lock.json`; the positive-control archive is therefore a scanner
+contract proof, not a representative published npm tarball. Typical published
+archives may legitimately produce `no_supported_targets`.

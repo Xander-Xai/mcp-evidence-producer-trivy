@@ -96,3 +96,9 @@ def test_scan_coverage_distinguishes_no_target_and_supported_target(tmp_path):
     coverage = determine_scan_coverage(root)
     assert coverage["status"] == "targets_present"
     assert coverage["supported_targets"] == ["package/package-lock.json"]
+
+
+def test_npm_shrinkwrap_only_is_not_assumed_supported(tmp_path):
+    root = tmp_path / "view"; (root / "package").mkdir(parents=True)
+    (root / "package" / "npm-shrinkwrap.json").write_text("{}", encoding="utf-8")
+    assert determine_scan_coverage(root)["status"] == "no_supported_targets"
