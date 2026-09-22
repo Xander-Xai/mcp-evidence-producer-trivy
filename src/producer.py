@@ -477,7 +477,7 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             invocation_started=True, process_completed=True, exit_code=0, exit_state_valid=True,
             output_present=True, output_parseable=True, output_exists=True, output_size=size,
             required_components=required_components,
-            completed_components=required_components if complete else None,
+            completed_components=required_components if complete else [],
             failed_components=[] if complete else ["result_semantics"],
             result_semantics_consistent=complete,
             completeness_reason="no_supported_dependency_targets" if complete else "supported_target_result_missing",
