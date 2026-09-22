@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.package_archive import ArchiveValidationError, PackageArchiveView
+from src.package_archive import ArchiveValidationError, PackageArchiveView, _safe_member_path, determine_scan_coverage
 
 
 def make_tgz(path: Path, members):
@@ -70,3 +70,29 @@ def test_derived_view_mutation_is_detected(tmp_path):
     with pytest.raises(ArchiveValidationError) as exc:
         view.verify_unchanged()
     assert exc.value.reason == "archive_view_changed"
+
+
+@pytest.mark.parametrize("suffix,reason", [(b"x", "archive_gzip_trailing_data")])
+def test_gzip_trailing_data_is_rejected(tmp_path, suffix, reason):
+    archive = tmp_path / "trailing.tgz"
+    make_tgz(archive, [("package/a", b"a", "file")])
+    archive.write_bytes(archive.read_bytes() + suffix)
+    with pytest.raises(ArchiveValidationError) as exc:
+        PackageArchiveView.create(archive)
+    assert exc.value.reason == reason
+
+
+def test_non_utf8_member_path_is_classified_not_raised_as_unicode_error():
+    with pytest.raises(ArchiveValidationError) as exc:
+        _safe_member_path("package/\udcff.js")
+    assert exc.value.reason == "archive_path_unsafe"
+
+
+def test_scan_coverage_distinguishes_no_target_and_supported_target(tmp_path):
+    root = tmp_path / "view"; (root / "package").mkdir(parents=True)
+    (root / "package" / "package.json").write_text("{}", encoding="utf-8")
+    assert determine_scan_coverage(root)["status"] == "no_supported_targets"
+    (root / "package" / "package-lock.json").write_text("{}", encoding="utf-8")
+    coverage = determine_scan_coverage(root)
+    assert coverage["status"] == "targets_present"
+    assert coverage["supported_targets"] == ["package/package-lock.json"]

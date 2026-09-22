@@ -14,7 +14,7 @@ from typing import Any
 from .adapter import inconclusive_receipt, map_report, validate_report
 from .artifact_snapshot import ArtifactSnapshot
 from .scanner_execution import component_for_error, make_execution_evidence
-from .package_archive import ArchiveValidationError, PackageArchiveView, POLICY, is_npm_archive
+from .package_archive import ArchiveValidationError, PackageArchiveView, POLICY, determine_scan_coverage, is_npm_archive
 
 PRODUCER_VERSION = "0.1.0"
 PINNED_TRIVY_VERSION = "0.74.0"
@@ -33,7 +33,7 @@ TRIVY_SCANNER_CONTRACT = "trivy-fs-json-v1"
 TRIVY_PACKAGE_SCANNER_CONTRACT = "trivy-fs-npm-package-view-v1"
 TRIVY_ARCHIVE_REQUIRED_COMPONENTS = (
     "artifact_snapshot", "archive_validation", "archive_extraction", "derived_view_binding",
-    "scanner_process", "scanner_output", "result_sections", "result_semantics",
+    "scanner_process", "scanner_output", "coverage_determination", "result_semantics",
 )
 _SNAPSHOT_META: ContextVar[dict[str, Any]] = ContextVar("trivy_snapshot_meta", default={})
 
@@ -134,6 +134,7 @@ def _write_evidence(
             "exit_code": exit_code,
         },
         "scanner_execution": execution,
+        "scan_coverage": _SNAPSHOT_META.get().get("scan_coverage"),
         "raw_report": _raw_report_metadata(raw_path),
         "producer": {"name": "mcp-evidence-producer-trivy", "version": PRODUCER_VERSION},
     }
@@ -253,6 +254,8 @@ def run(binary: str, artifact: Path, out: Path) -> int:
         scan_target = archive_view.root
         required_components = TRIVY_ARCHIVE_REQUIRED_COMPONENTS
         scanner_contract = TRIVY_PACKAGE_SCANNER_CONTRACT
+        coverage = determine_scan_coverage(archive_view.root)
+        _SNAPSHOT_META.set({**_SNAPSHOT_META.get(), "scan_coverage": coverage})
         _SNAPSHOT_META.set({**_SNAPSHOT_META.get(), "scan_input_kind": "producer-owned-package-archive-view",
                             "archive_view": {
                                 "archive": {"format": "npm-tgz", "compression": "gzip", "member_count": archive_view.member_count},
@@ -261,6 +264,16 @@ def run(binary: str, artifact: Path, out: Path) -> int:
                                                   "total_regular_file_bytes": archive_view.total_regular_file_bytes},
                                 "extraction": {"completed": True, "policy": POLICY},
                             }})
+        if coverage["status"] == "indeterminate":
+            execution = make_execution_evidence(
+                invocation_started=False, process_completed=False, exit_code=None, exit_state_valid=False,
+                output_present=False, output_parseable=False, output_exists=False, output_size=None,
+                required_components=TRIVY_ARCHIVE_REQUIRED_COMPONENTS, failed_components=["coverage_determination"],
+                result_semantics_consistent=None, completeness_reason="coverage_inventory_failed",
+                scanner_contract=TRIVY_PACKAGE_SCANNER_CONTRACT, fatal_failure=True)
+            return _finish_inconclusive(out=out, artifact=artifact, artifact_hash=artifact_hash, binary_hash=None,
+                                        scanner_version="unavailable", argv=[], started=None, completed=None,
+                                        exit_code=None, raw_path=raw_path, execution=execution)
 
     try:
         binary_hash = sha256(Path(binary))
@@ -426,7 +439,7 @@ def run(binary: str, artifact: Path, out: Path) -> int:
         failed_component = (
             "scanner_output"
             if reason in {"scanner_output_missing", "scanner_output_empty", "scanner_output_unparseable"}
-            else "result_sections"
+            else "result_semantics"
         )
         execution = make_execution_evidence(
             invocation_started=True,
@@ -559,6 +572,30 @@ def run(binary: str, artifact: Path, out: Path) -> int:
             raw_path=raw_path,
             execution=execution,
         )
+
+    if scanner_contract == TRIVY_PACKAGE_SCANNER_CONTRACT and not isinstance(raw.get("Results"), list):
+        coverage = _SNAPSHOT_META.get().get("scan_coverage") or {}
+        if coverage.get("status") == "no_supported_targets":
+            execution = make_execution_evidence(
+                invocation_started=True, process_completed=True, exit_code=0, exit_state_valid=True,
+                output_present=True, output_parseable=True, output_exists=True, output_size=size,
+                required_components=required_components, completed_components=required_components,
+                result_semantics_consistent=True, completeness_reason="no_supported_dependency_targets",
+                scanner_contract=scanner_contract)
+            return _finish_inconclusive(out=out, artifact=artifact, artifact_hash=artifact_hash,
+                                        binary_hash=binary_hash, scanner_version=version, argv=argv,
+                                        started=started, completed=completed, exit_code=0, raw_path=raw_path,
+                                        execution=execution)
+        execution = make_execution_evidence(
+            invocation_started=True, process_completed=True, exit_code=0, exit_state_valid=True,
+            output_present=True, output_parseable=True, output_exists=True, output_size=size,
+            required_components=required_components, failed_components=["result_semantics"],
+            result_semantics_consistent=False, completeness_reason="supported_target_result_missing",
+            scanner_contract=scanner_contract)
+        return _finish_inconclusive(out=out, artifact=artifact, artifact_hash=artifact_hash,
+                                    binary_hash=binary_hash, scanner_version=version, argv=argv,
+                                    started=started, completed=completed, exit_code=0, raw_path=raw_path,
+                                    execution=execution)
 
     try:
         if archive_view is not None:
